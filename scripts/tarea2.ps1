@@ -296,14 +296,25 @@ function Configurar-Ambito {
 }
 
 function Mostrar-Monitoreo {
+    
     Write-Host ""
     Write-Host "--- Monitoreo DHCP ---"
 
     $installed = $false
     try { $installed = Es-RolDhcpInstalado } catch { $installed = $false }
 
-    $instText = if ($installed) { "SI" } else { "NO" }
-    Write-Host ("DHCP Role instalado: {0}" -f $instText)
+    if (-not $installed) {
+        Write-Host "DHCP no esta instalado."
+        return
+    }
+
+    Import-Module DhcpServer -ErrorAction Stop
+
+    $scopes = Get-DhcpServerv4Scope -ErrorAction SilentlyContinue
+    if (-not $scopes) {
+        Write-Host "No hay configuracion todavia."
+        return
+    }
 
     $svc = Get-Service -Name DHCPServer -ErrorAction SilentlyContinue
     if ($svc) {
@@ -312,16 +323,6 @@ function Mostrar-Monitoreo {
         Write-Host ("Servicio DHCPServer: {0} / StartupType: {1}" -f $svc.Status, $startMode)
     } else {
         Write-Host "Servicio DHCP: no encontrado."
-    }
-
-    if (-not $installed) { return }
-
-    Import-Module DhcpServer -ErrorAction Stop
-
-    $scopes = Get-DhcpServerv4Scope -ErrorAction SilentlyContinue
-    if (-not $scopes) {
-        Write-Host "No hay ambitos configurados."
-        return
     }
 
     Write-Host ""
@@ -341,6 +342,7 @@ function Mostrar-Monitoreo {
         }
     }
 }
+
 
 function Reiniciar-ServicioDhcp {
     $svc = Get-Service -Name DHCPServer -ErrorAction SilentlyContinue

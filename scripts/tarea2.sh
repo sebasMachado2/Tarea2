@@ -402,6 +402,11 @@ opcion_4_monitoreo() {
   echo "-- Status del servicio ($KEA_SVC) --"
   rc-service "$KEA_SVC" status || true
 
+  if [ ! -f "$KEA_CONF" ] || [ ! -f "$STATE_FILE" ]; then
+    echo "No hay configuracion todavia."
+    return
+  fi
+
   echo "\n-- Configuracion DHCP ($KEA_CONF) --"
   [ -f "$KEA_CONF" ] && sed -n '1,220p' "$KEA_CONF" || echo "No existe $KEA_CONF"
 
