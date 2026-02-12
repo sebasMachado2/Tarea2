@@ -150,7 +150,7 @@ function Seleccionar-AliasInterfaz {
     }
 }
 
-function Establecer-IPv4EstaticaEnInterfaz([string]$InterfaceAlias, [string]$Ip, [string]$Mask, [string]$DnsOptional) {
+function Establecer-IPv4EstaticaEnInterfaz([string]$InterfaceAlias, [string]$Ip, [string]$Mask, [string[]]$DnsServersOptional) {
     $prefix = Obtener-PrefijoDesdeMascara $Mask
 
     Write-Host ""
@@ -172,8 +172,8 @@ function Establecer-IPv4EstaticaEnInterfaz([string]$InterfaceAlias, [string]$Ip,
         New-NetIPAddress -InterfaceAlias $InterfaceAlias -IPAddress $Ip -PrefixLength $prefix -Type Unicast | Out-Null
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($DnsOptional)) {
-        Set-DnsClientServerAddress -InterfaceAlias $InterfaceAlias -ServerAddresses $DnsOptional | Out-Null
+    if ($DnsServersOptional -and $DnsServersOptional.Count -gt 0) {
+        Set-DnsClientServerAddress -InterfaceAlias $InterfaceAlias -ServerAddresses $DnsServersOptional | Out-Null
     }
 }
 
@@ -237,25 +237,39 @@ function Configurar-Ambito {
         }
     }
 
-    $dns = Leer-IPv4Opcional "DNS"
-    if ($dns) {
-        if ((Obtener-DireccionDeRed $dns $mask) -ne (Obtener-DireccionDeRed $serverIp $mask)) {
-            throw "El DNS no esta en la misma subred que el ambito."
+    $dns1 = Leer-IPv4Opcional "DNS primario"
+    $dns2 = $null
+    if ($dns1) {
+        $dns2 = Leer-IPv4Opcional "DNS secundario"
+    }
+
+    if ($dns1) {
+        if ((Obtener-DireccionDeRed $dns1 $mask) -ne (Obtener-DireccionDeRed $serverIp $mask)) {
+            throw "El DNS primario no esta en la misma subred que el ambito."
         }
     }
+    if ($dns2) {
+        if ((Obtener-DireccionDeRed $dns2 $mask) -ne (Obtener-DireccionDeRed $serverIp $mask)) {
+            throw "El DNS secundario no esta en la misma subred que el ambito."
+        }
+    }
+
+    $dnsList = @()
+    if ($dns1) { $dnsList += $dns1 }
+    if ($dns2) { $dnsList += $dns2 }
 
     while ($true) {
-        $raw = (Read-Host "Tiempo de concesion en horas (ej. 8)").Trim()
+        $raw = (Read-Host "Tiempo de concesion en segundos").Trim()
         if ($raw -match '^\d+$') {
-            $leaseHours = [int]$raw
-            if ($leaseHours -gt 0 -and $leaseHours -le 8760) { break }
+            $leaseSeconds = [int]$raw
+            if ($leaseSeconds -gt 0 -and $leaseSeconds -le 31536000) { break }
         }
-        Write-Host "Valor invalido. Ingresa un entero > 0."
+        Write-Host "Valor invalido. Ingresa un entero > 0 (max 31536000)."
     }
-    $leaseDuration = New-TimeSpan -Hours $leaseHours
+    $leaseDuration = New-TimeSpan -Seconds $leaseSeconds
 
     $iface = Seleccionar-AliasInterfaz
-    Establecer-IPv4EstaticaEnInterfaz -InterfaceAlias $iface -Ip $serverIp -Mask $mask -DnsOptional $dns
+    Establecer-IPv4EstaticaEnInterfaz -InterfaceAlias $iface -Ip $serverIp -Mask $mask -DnsServersOptional $dnsList
 
     $scopeIdStr = Obtener-DireccionDeRed $serverIp $mask
     $scopeId = [System.Net.IPAddress]::Parse($scopeIdStr)
@@ -269,19 +283,16 @@ function Configurar-Ambito {
     }
 
     Add-DhcpServerv4Scope -Name $scopeName -StartRange $poolStart -EndRange $endIp -SubnetMask $mask | Out-Null
-
     Set-DhcpServerv4Scope -ScopeId $scopeId -State Active -LeaseDuration $leaseDuration | Out-Null
 
     if ($gateway) {
         Set-DhcpServerv4OptionValue -ScopeId $scopeId -Router $gateway | Out-Null
     }
-    if ($dns) {
-        Set-DhcpServerv4OptionValue -ScopeId $scopeId -DnsServer $dns | Out-Null
+    if ($dnsList -and $dnsList.Count -gt 0) {
+        Set-DhcpServerv4OptionValue -ScopeId $scopeId -DnsServer $dnsList | Out-Null
     }
 
     Restart-Service -Name DHCPServer -Force
-
-
 }
 
 function Mostrar-Monitoreo {
@@ -318,16 +329,6 @@ function Mostrar-Monitoreo {
     $scopes | Select-Object Name, ScopeId, StartRange, EndRange, SubnetMask, State, LeaseDuration | Format-Table -AutoSize
 
     foreach ($s in $scopes) {
-        Write-Host ""
-        Write-Host ("--- Opciones del Scope {0} ({1}) ---" -f $s.Name, $s.ScopeId)
-        $opts = $null
-        try { $opts = Get-DhcpServerv4OptionValue -ScopeId $s.ScopeId -ErrorAction Stop } catch { $opts = $null }
-        if ($opts) {
-            $opts | Select-Object OptionId, Name, Value | Format-Table -AutoSize
-        } else {
-            Write-Host "Sin opciones configuradas."
-        }
-
         Write-Host ""
         Write-Host ("--- Leases del Scope {0} ({1}) ---" -f $s.Name, $s.ScopeId)
         $leases = Get-DhcpServerv4Lease -ScopeId $s.ScopeId -ErrorAction SilentlyContinue

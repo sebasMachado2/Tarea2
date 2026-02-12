@@ -150,22 +150,6 @@ leer_ipv4_opcional() {
   done
 }
 
-leer_dns_opcional() {
-  prompt="$1 (opcional, varios separados por coma)"
-  while :; do
-    printf "%s: " "$prompt" >&2
-    read -r line
-    [ -z "${line:-}" ] && { echo ""; return; }
-    dns_list=$(echo "$line" | tr ',' ' ')
-    ok=1
-    for d in $dns_list; do
-      es_ipv4_valida "$d" || { ok=0; break; }
-    done
-    [ "$ok" -eq 1 ] && { echo "$dns_list"; return; }
-    echo "DNS invalido. Ej: 192.168.100.1 8.8.8.8 o 192.168.100.1,8.8.8.8" >&2
-  done
-}
-
 si_no() {
   q="$1"
   while :; do
@@ -315,16 +299,35 @@ opcion_3_configurar() {
     pausa; return
   fi
 
-  DNS_LIST="$(leer_dns_opcional "DNS")"
+  DNS1="$(leer_ipv4_opcional "DNS primario")"
+  DNS2=""
+  if [ -n "${DNS1:-}" ]; then
+    DNS2="$(leer_ipv4_opcional "DNS secundario")"
+  fi
+
+  if [ -n "${DNS1:-}" ] && ! misma_subred "$START_IP" "$DNS1" "$MASK"; then
+    echo "ERROR: El DNS primario debe estar en la misma subred ($SUBNET_CIDR)."
+    pausa; return
+  fi
+  if [ -n "${DNS2:-}" ] && ! misma_subred "$START_IP" "$DNS2" "$MASK"; then
+    echo "ERROR: El DNS secundario debe estar en la misma subred ($SUBNET_CIDR)."
+    pausa; return
+  fi
+
+  DNS_LIST=""
+  if [ -n "${DNS1:-}" ] && [ -n "${DNS2:-}" ]; then
+    DNS_LIST="$DNS1 $DNS2"
+  elif [ -n "${DNS1:-}" ]; then
+    DNS_LIST="$DNS1"
+  fi
 
   while :; do
-    printf "Tiempo de concesion en minutos (ej: 60): " >&2
-    read -r LEASE_MIN
-    echo "${LEASE_MIN:-}" | grep -Eq '^[0-9]+$' || { echo "Debe ser entero." >&2; continue; }
-    [ "$LEASE_MIN" -ge 1 ] || { echo "Debe ser >= 1." >&2; continue; }
+    printf "Tiempo de concesion en segundos: " >&2
+    read -r LEASE_SEC
+    echo "${LEASE_SEC:-}" | grep -Eq '^[0-9]+$' || { echo "Debe ser entero." >&2; continue; }
+    [ "$LEASE_SEC" -ge 1 ] || { echo "Debe ser >= 1." >&2; continue; }
     break
   done
-  LEASE_SEC=$((LEASE_MIN * 60))
 
   asegurar_herramientas_ip || { echo "No se pudo asegurar iproute2."; pausa; return; }
 
@@ -373,8 +376,10 @@ SERVER_IP="$START_IP/$PREFIX"
 SUBNET="$SUBNET_CIDR"
 POOL="$POOL_START_IP - $END_IP"
 GATEWAY="${GATEWAY:-}"
+DNS1="${DNS1:-}"
+DNS2="${DNS2:-}"
 DNS_LIST="${DNS_LIST:-}"
-LEASE_MIN="$LEASE_MIN"
+LEASE_SEC="$LEASE_SEC"
 EOF
 
   if existe_comando kea-dhcp4; then
@@ -409,8 +414,13 @@ opcion_4_monitoreo() {
     echo "Subred: ${SUBNET:-}"
     echo "Pool: ${POOL:-}"
     echo "Gateway: ${GATEWAY:-<omitido>}"
-    echo "DNS: ${DNS_LIST:-<omitido>}"
-    echo "Lease: ${LEASE_MIN:-} min"
+    if [ -n "${DNS1:-}" ]; then
+      echo "DNS primario: ${DNS1:-}"
+      echo "DNS secundario: ${DNS2:-<omitido>}"
+    else
+      echo "DNS: <omitido>"
+    fi
+    echo "Lease: ${LEASE_SEC:-} sec"
   else
     echo "(Sin estado guardado aun)"
   fi
