@@ -305,15 +305,6 @@ opcion_3_configurar() {
     DNS2="$(leer_ipv4_opcional "DNS secundario")"
   fi
 
-  if [ -n "${DNS1:-}" ] && ! misma_subred "$START_IP" "$DNS1" "$MASK"; then
-    echo "ERROR: El DNS primario debe estar en la misma subred ($SUBNET_CIDR)."
-    pausa; return
-  fi
-  if [ -n "${DNS2:-}" ] && ! misma_subred "$START_IP" "$DNS2" "$MASK"; then
-    echo "ERROR: El DNS secundario debe estar en la misma subred ($SUBNET_CIDR)."
-    pausa; return
-  fi
-
   DNS_LIST=""
   if [ -n "${DNS1:-}" ] && [ -n "${DNS2:-}" ]; then
     DNS_LIST="$DNS1 $DNS2"

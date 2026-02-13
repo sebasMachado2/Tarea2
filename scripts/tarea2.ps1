@@ -243,16 +243,6 @@ function Configurar-Ambito {
         $dns2 = Leer-IPv4Opcional "DNS secundario"
     }
 
-    if ($dns1) {
-        if ((Obtener-DireccionDeRed $dns1 $mask) -ne (Obtener-DireccionDeRed $serverIp $mask)) {
-            throw "El DNS primario no esta en la misma subred que el ambito."
-        }
-    }
-    if ($dns2) {
-        if ((Obtener-DireccionDeRed $dns2 $mask) -ne (Obtener-DireccionDeRed $serverIp $mask)) {
-            throw "El DNS secundario no esta en la misma subred que el ambito."
-        }
-    }
 
     $dnsList = @()
     if ($dns1) { $dnsList += $dns1 }
@@ -262,9 +252,9 @@ function Configurar-Ambito {
         $raw = (Read-Host "Tiempo de concesion en segundos").Trim()
         if ($raw -match '^\d+$') {
             $leaseSeconds = [int]$raw
-            if ($leaseSeconds -gt 0 -and $leaseSeconds -le 31536000) { break }
+            if ($leaseSeconds -gt 0 -and $leaseSeconds -le 100000000 { break }
         }
-        Write-Host "Valor invalido. Ingresa un entero > 0 (max 31536000)."
+        Write-Host "Valor invalido. Ingresa un entero > 0."
     }
     $leaseDuration = New-TimeSpan -Seconds $leaseSeconds
 
